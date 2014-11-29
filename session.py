@@ -18,44 +18,52 @@
 #            Offloaded print_verbose and create_html_report to presentation.py
 # 09/13/2014 Added connect_winrm_cli :)
 # 09/21/2014 Added NameError exception handling to scan and remediate methods
+# 10/26/2014 Added metabase. Metadata housed as static methods inside the 
+#            finding classes has been stored inside the metabase. To minimize 
+#            code duplication of the finding classes, class definitions are 
+#            assigned and referenced by UUIDs. Finding definitions in the 
+#            metadata are also assigned and referenced by UUIDs. The load
+#            findings block has been re-written to queue findings by their
+#            definition UUIDs. Afterwords finding objects are populated from
+#            the indicated class UUIDs referenced in the queued definitions.
+#            Even if a class UUID is referenced multiple times, only one
+#            object of the class is appended into the session object. As a
+#            consequence of using a metabase, the metadata for a finding is no
+#            longer exposed to the session object. The debug finding has been
+#            reduced to displaying compliance and standard output of the
+#            finding class object.
 ################################################################################
 
 import ssh_cli
 import local_cli
-import presentation
 import winrm_cli
 import traceback
 
 class Session:
     def __init__(self):
         self.cli = local_cli.Console()
-	self.findings = []
-        self.html = ''
+	self.findings = {}
         self.debug_mode = 0
     
     def debug_finding(self, finding):
         # Print debugging information based on debug level
-        # Level 1: id and compliance status
-        # Level 2: verbose finding details
-        # Level 3: standard output from check method
-        status = 'MANUAL'
-        if hasattr(finding, 'get_compliance'):
-            if finding.get_compliance():
-                status = 'COMPLIANT'
-            else: 
-                status = 'NON-COMPLIANT'
+        # Level 1: uuid and compliance status
+        # Level 2: standard output from check method
+        status = None
+        if finding.is_compliant:
+            status = 'COMPLIANT'
+        else: 
+            status = 'NON-COMPLIANT'
         
-        if self.debug_mode > 1: 
-            presentation.print_verbose(finding)
-            if self.debug_mode > 2 and hasattr(finding, 'get_output'):
-                for line in finding.get_output():
-                    print "         " + line.strip()
+        if self.debug_mode > 1:
+            for line in finding.output:
+                print line.strip()
+            print ""
         
-        if hasattr(finding, "get_group_id"):
-            print finding.get_group_id() + " " + status
+        print finding.uuid + " " + status
         
     def scan(self):
-        for finding in self.findings:
+        for finding in self.findings.itervalues():
             if (hasattr(finding, "check")): 
                 try:
                     finding.check(self.cli)
@@ -70,7 +78,7 @@ class Session:
                 
         
     def remediate(self):
-        for finding in self.findings:
+        for finding in self.findings.itervalues():
             if (hasattr(finding, "check")): 
                 try:
                     if not finding.check(self.cli):
